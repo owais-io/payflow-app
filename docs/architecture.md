@@ -155,3 +155,43 @@ Both serve the history query ("payments where the account is sender or receiver,
 - `balance >= 0` in the database is a backstop: the API checks first, the constraint catches bugs.
 - A transfer locks both account rows in a fixed order (lower UUID first), so two
   opposite transfers at the same time can't deadlock.
+
+## Events
+
+payments-api publishes one event per completed transfer; notification-worker consumes it.
+
+| Item | Value |
+|---|---|
+| Transport | Redis Stream |
+| Stream | `payflow:payments` |
+| Consumer group | `notification-workers` |
+| Consumer name | pod name (`HOSTNAME` env var) |
+| Retention | `XADD ... MAXLEN ~ 10000` (caps Redis memory) |
+| Delivery | at least once (worker acks with `XACK` after logging) |
+
+### Message
+Stream entries are flat string fields, so the event is one JSON field `payload`:
+
+```json
+{
+  "event_id": "c81f...",
+  "event_type": "payment.completed",
+  "version": 1,
+  "occurred_at": "2026-11-02T14:05:00Z",
+  "data": {
+    "payment_id": "7d4e...",
+    "from_account_id": "3f2b...",
+    "to_account_id": "9a1c...",
+    "amount": "250.00",
+    "currency": "PKR"
+  }
+}
+```
+
+### Rules
+- Published only after the DB commit; a rolled-back transfer sends nothing.
+- If Redis is unreachable, the payment still succeeds; payments-api logs the failure and
+  increments `events_publish_failed_total`. Known limitation: that event is lost
+  (the fix would be an outbox table, out of scope).
+- The worker may see an event twice after a crash; logging twice is acceptable.
+- `version` lets the message shape change later without breaking old workers.
