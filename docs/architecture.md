@@ -53,3 +53,59 @@ flowchart LR
 - Logs are JSON lines on stdout, one event per line, with no log files.
 - Services are stateless; all state lives in PostgreSQL or Redis.
 - Money is stored as `NUMERIC(12,2)`, never as a float.
+
+## API contracts
+
+Conventions: JSON bodies; errors as `{"detail": "..."}`; IDs are UUIDs; money is a decimal
+string with 2 places (`"150.00"`); single currency `PKR`. Services serve `/accounts` and
+`/payments`; the browser calls them as `/api/accounts` and `/api/payments` and the Ingress strips `/api`.
+
+### accounts-api
+
+| Method | Path | Success | Errors |
+|---|---|---|---|
+| POST | `/accounts` | 201 + account | 422 invalid body |
+| GET | `/accounts/{id}` | 200 + account | 404 not found |
+| GET | `/accounts/{id}/balance` | 200 + balance | 404 not found |
+
+`POST /accounts` request:
+```json
+{ "owner_name": "Ali Khan", "initial_balance": "1000.00" }
+```
+Account response:
+```json
+{ "id": "3f2b...", "owner_name": "Ali Khan", "balance": "1000.00",
+  "currency": "PKR", "created_at": "2026-11-02T14:00:00Z" }
+```
+Balance response:
+```json
+{ "account_id": "3f2b...", "balance": "1000.00", "currency": "PKR" }
+```
+Rules: `owner_name` 1–100 chars; `initial_balance` ≥ 0, defaults to `"0.00"`.
+
+### payments-api
+
+| Method | Path | Success | Errors |
+|---|---|---|---|
+| POST | `/payments` | 201 + payment | 400 same account · 404 account not found · 409 insufficient funds · 422 invalid body |
+| GET | `/payments?account_id={id}` | 200 + list of payments | 422 missing account_id |
+
+`POST /payments` request:
+```json
+{ "from_account_id": "3f2b...", "to_account_id": "9a1c...", "amount": "250.00" }
+```
+Payment response:
+```json
+{ "id": "7d4e...", "from_account_id": "3f2b...", "to_account_id": "9a1c...",
+  "amount": "250.00", "currency": "PKR", "status": "completed",
+  "created_at": "2026-11-02T14:05:00Z" }
+```
+History returns payments where the account is sender or receiver, newest first;
+an unknown account returns an empty list.
+Rules: `amount` > 0 with at most 2 decimals; `from` ≠ `to`.
+
+Internal call: payments-api uses `GET /accounts/{id}` on accounts-api to confirm both accounts exist.
+
+### Every service also exposes
+`GET /healthz` → 200 `{"status":"ok"}` · `GET /readyz` → 200, or 503 if a dependency is down ·
+`GET /metrics` → Prometheus text format.
