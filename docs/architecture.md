@@ -109,3 +109,49 @@ Internal call: payments-api uses `GET /accounts/{id}` on accounts-api to confirm
 ### Every service also exposes
 `GET /healthz` → 200 `{"status":"ok"}` · `GET /readyz` → 200, or 503 if a dependency is down ·
 `GET /metrics` → Prometheus text format.
+
+## Data model
+
+One PostgreSQL database, two tables. accounts-api owns `accounts`; payments-api owns
+`transactions` and updates `accounts.balance` only inside a transfer.
+
+```mermaid
+erDiagram
+  accounts ||--o{ transactions : "sends (from_account_id)"
+  accounts ||--o{ transactions : "receives (to_account_id)"
+```
+
+### accounts
+| Column | Type | Rules |
+|---|---|---|
+| id | UUID | primary key, `gen_random_uuid()` |
+| owner_name | VARCHAR(100) | not null |
+| balance | NUMERIC(12,2) | not null, default 0, `CHECK (balance >= 0)` |
+| currency | CHAR(3) | not null, default `'PKR'` |
+| created_at | TIMESTAMPTZ | not null, default `now()` |
+
+### transactions
+| Column | Type | Rules |
+|---|---|---|
+| id | UUID | primary key, `gen_random_uuid()` |
+| from_account_id | UUID | not null, FK → accounts.id |
+| to_account_id | UUID | not null, FK → accounts.id |
+| amount | NUMERIC(12,2) | not null, `CHECK (amount > 0)` |
+| currency | CHAR(3) | not null, default `'PKR'` |
+| status | VARCHAR(20) | not null, default `'completed'` |
+| created_at | TIMESTAMPTZ | not null, default `now()` |
+
+Table check: `CHECK (from_account_id <> to_account_id)`.
+
+### Indexes
+- `transactions (from_account_id, created_at DESC)`
+- `transactions (to_account_id, created_at DESC)`
+
+Both serve the history query ("payments where the account is sender or receiver, newest first").
+
+### Notes
+- Only completed transfers are stored; a failed transfer is rolled back and counted in
+  `payments_failed_total` instead.
+- `balance >= 0` in the database is a backstop: the API checks first, the constraint catches bugs.
+- A transfer locks both account rows in a fixed order (lower UUID first), so two
+  opposite transfers at the same time can't deadlock.
