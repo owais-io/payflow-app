@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, status
 
-from app import health, models  # noqa: F401  (models registers the table with Base)
+from app import health, metrics, models  # noqa: F401  (models registers the table with Base)
 from app.db import Base, get_engine
 from app.schemas import Account, AccountCreate, Balance
 from app.store import AccountStore, get_store
@@ -20,7 +20,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="accounts-api", version="0.1.0", lifespan=lifespan)
+app.middleware("http")(metrics.track_requests)
 app.include_router(health.router)
+app.include_router(metrics.router)
 
 Store = Annotated[AccountStore, Depends(get_store)]
 
