@@ -1,8 +1,12 @@
+import logging
 import time
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+
+logger = logging.getLogger(__name__)
+QUIET_PATHS = {"/healthz", "/readyz", "/metrics"}
 
 REQUESTS = Counter(
     "http_requests_total",
@@ -30,8 +34,19 @@ async def track_requests(
     finally:
         route = request.scope.get("route")
         path = route.path if route else "unmatched"
+        duration = time.perf_counter() - start
+        if path not in QUIET_PATHS:
+            logger.info(
+                "request",
+                extra={
+                    "method": request.method,
+                    "path": path,
+                    "status": status_code,
+                    "duration_ms": round(duration * 1000, 1),
+                },
+            )
         REQUESTS.labels(request.method, path, str(status_code)).inc()
-        LATENCY.labels(request.method, path).observe(time.perf_counter() - start)
+        LATENCY.labels(request.method, path).observe(duration)
 
 
 @router.get("/metrics", include_in_schema=False)

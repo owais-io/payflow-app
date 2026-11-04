@@ -1,3 +1,5 @@
+import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -5,10 +7,15 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, status
 
-from app import health, metrics, models  # noqa: F401  (models registers the table with Base)
+from app import health, logging_config, metrics, models  # noqa: F401  (models registers the table with Base)
 from app.db import Base, get_engine
 from app.schemas import Account, AccountCreate, Balance
 from app.store import AccountStore, get_store
+
+# Read directly from the environment (not Settings) so importing the app
+# never requires DATABASE_URL; tests rely on that in 1.2.7.
+logging_config.configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -36,7 +43,9 @@ def _get_or_404(store: AccountStore, account_id: UUID) -> Account:
 
 @app.post("/accounts", response_model=Account, status_code=status.HTTP_201_CREATED)
 def create_account(body: AccountCreate, store: Store) -> Account:
-    return store.create(body.owner_name, body.initial_balance)
+    account = store.create(body.owner_name, body.initial_balance)
+    logger.info("account created", extra={"account_id": str(account.id)})
+    return account
 
 
 @app.get("/accounts/{account_id}", response_model=Account)
