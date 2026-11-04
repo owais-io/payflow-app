@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    database_url: str
     accounts_api_url: str
     accounts_api_timeout_seconds: float = 2.0
 
