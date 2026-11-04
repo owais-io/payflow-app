@@ -1,0 +1,13 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    accounts_api_url: str
+    accounts_api_timeout_seconds: float = 2.0
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
