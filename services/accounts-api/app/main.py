@@ -1,17 +1,30 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, status
 
+from app import models  # noqa: F401  (registers the table with Base)
+from app.db import Base, get_engine
 from app.schemas import Account, AccountCreate, Balance
-from app.store import InMemoryAccountStore, get_store
-
-app = FastAPI(title="accounts-api", version="0.1.0")
-
-Store = Annotated[InMemoryAccountStore, Depends(get_store)]
+from app.store import AccountStore, get_store
 
 
-def _get_or_404(store: InMemoryAccountStore, account_id: UUID) -> Account:
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Temporary: creates missing tables at startup.
+    # Replaced by a proper migration step in Task 3.2.5.
+    Base.metadata.create_all(get_engine())
+    yield
+
+
+app = FastAPI(title="accounts-api", version="0.1.0", lifespan=lifespan)
+
+Store = Annotated[AccountStore, Depends(get_store)]
+
+
+def _get_or_404(store: AccountStore, account_id: UUID) -> Account:
     account = store.get(account_id)
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="account not found")
