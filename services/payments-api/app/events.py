@@ -8,7 +8,7 @@ import redis
 from app.metrics import EVENTS_PUBLISH_FAILED
 from app.models import TransactionRow
 
-log = logging.getLogger("payments-api.events")
+logger = logging.getLogger(__name__)
 
 STREAM_MAXLEN = 10_000  # approximate cap so the stream can't fill Redis memory
 
@@ -48,6 +48,9 @@ class EventPublisher:
             # The payment is already committed; losing the event is the documented
             # trade-off (no outbox). The counter makes the loss visible and alertable.
             EVENTS_PUBLISH_FAILED.inc()
-            log.exception("failed to publish payment.completed for payment %s", tx.id)
+            logger.exception(
+                "event publish failed",
+                extra={"event_type": "payment.completed", "payment_id": str(tx.id)},
+            )
             return False
         return True

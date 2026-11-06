@@ -6,6 +6,8 @@ A user can open an account, check its balance, send money to another account and
 The code is kept simple on purpose: the focus is how it is built, deployed and operated.
 
 ## Components
+| Component | Tech | Responsibility | Port |
+|---|---|---|---|
 | frontend | nginx (unprivileged) | Serves one static HTML/JS page; the browser calls the APIs via `/api/accounts` and `/api/payments` | 8080 |
 | accounts-api | Python FastAPI | Creates accounts and returns account details and balances; owns the `accounts` table | 8001 |
 | payments-api | Python FastAPI | Transfers money between two accounts: rejects insufficient funds, debits the sender, credits the receiver and records the transaction in one DB transaction; publishes `payment.completed`; returns payment history | 8002 |
@@ -49,7 +51,7 @@ flowchart LR
 
 ## Cross-cutting rules
 - All config comes from environment variables (12-Factor); nothing environment-specific is in the code.
-- Each API exposes `/healthz` (process is alive), `/readyz` (dependencies reachable) and `/metrics` (Prometheus).
+- Each API exposes `/healthz` (process is alive), `/readyz` (hard dependencies reachable) and `/metrics` (Prometheus).
 - Logs are JSON lines on stdout, one event per line, with no log files.
 - Services are stateless; all state lives in PostgreSQL or Redis.
 - Money is stored as `NUMERIC(12,2)`, never as a float.
@@ -107,7 +109,8 @@ Rules: `amount` > 0 with at most 2 decimals; `from` ≠ `to`.
 Internal call: payments-api uses `GET /accounts/{id}` on accounts-api to confirm both accounts exist.
 
 ### Every service also exposes
-`GET /healthz` → 200 `{"status":"ok"}` · `GET /readyz` → 200, or 503 if a dependency is down ·
+`GET /healthz` → 200 `{"status":"ok"}` · `GET /readyz` → 200, or 503 if a hard dependency
+(PostgreSQL) is down; soft dependencies (Redis) are reported in the body but never cause 503 ·
 `GET /metrics` → Prometheus text format.
 
 ## Data model
