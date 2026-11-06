@@ -3,10 +3,11 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from typing import Annotated, NoReturn
+from uuid import UUID
 
 import httpx
 import redis
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app import health, logging_config, metrics
@@ -14,7 +15,7 @@ from app.accounts_client import AccountsClient, AccountsUnavailable
 from app.config import get_settings
 from app.db import Base, get_engine, get_sessionmaker
 from app.events import EventPublisher
-from app.ledger import AccountNotFound, InsufficientFunds, transfer
+from app.ledger import AccountNotFound, InsufficientFunds, history, transfer
 from app.models import TransactionRow
 from app.schemas import Payment, PaymentCreate
 
@@ -69,6 +70,18 @@ Events = Annotated[EventPublisher, Depends(get_events)]
 DbSession = Annotated[Session, Depends(get_session)]
 
 
+def _to_payment(tx: TransactionRow) -> Payment:
+    return Payment(
+        id=tx.id,
+        from_account_id=tx.from_account_id,
+        to_account_id=tx.to_account_id,
+        amount=tx.amount,
+        currency=tx.currency,
+        status=tx.status,
+        created_at=tx.created_at,
+    )
+
+
 def _reject(reason: str, status_code: int, detail: str) -> NoReturn:
     """Count, log and raise in one place, so every rejection is handled the same way."""
     metrics.PAYMENTS_FAILED.labels(reason).inc()
@@ -117,12 +130,15 @@ def create_payment(
     # Only after the commit inside transfer(): a rolled-back payment never sends an event.
     events.publish_payment_completed(tx)
 
-    return Payment(
-        id=tx.id,
-        from_account_id=tx.from_account_id,
-        to_account_id=tx.to_account_id,
-        amount=tx.amount,
-        currency=tx.currency,
-        status=tx.status,
-        created_at=tx.created_at,
-    )
+    return _to_payment(tx)
+
+
+@app.get("/payments", response_model=list[Payment])
+def list_payments(
+    account_id: UUID,
+    session: DbSession,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[Payment]:
+    # An unknown account simply has no payments: 200 with [], as the contract says.
+    # No call to accounts-api, so history keeps working while accounts-api is down.
+    return [_to_payment(tx) for tx in history(session, account_id, limit)]

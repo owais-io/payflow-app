@@ -56,6 +56,18 @@ class FakeLedger:
         )
 
 
+class FakeHistory:
+    """Replaces ledger.history(): returns whatever rows the test puts in."""
+
+    def __init__(self) -> None:
+        self.rows: list[TransactionRow] = []
+        self.calls: list[tuple[UUID, int]] = []
+
+    def __call__(self, session, account_id: UUID, limit: int) -> list[TransactionRow]:
+        self.calls.append((account_id, limit))
+        return self.rows[:limit]
+
+
 @pytest.fixture
 def accounts() -> FakeAccountsClient:
     return FakeAccountsClient()
@@ -69,12 +81,19 @@ def ledger(monkeypatch) -> FakeLedger:
 
 
 @pytest.fixture
+def payment_history(monkeypatch) -> FakeHistory:
+    fake = FakeHistory()
+    monkeypatch.setattr(main, "history", fake)
+    return fake
+
+
+@pytest.fixture
 def redis_client() -> fakeredis.FakeRedis:
     return fakeredis.FakeRedis()
 
 
 @pytest.fixture
-def client(accounts, ledger, redis_client) -> Iterator[TestClient]:
+def client(accounts, ledger, payment_history, redis_client) -> Iterator[TestClient]:
     app.dependency_overrides[get_accounts_client] = lambda: accounts
     app.dependency_overrides[get_events] = lambda: EventPublisher(redis_client, STREAM)
     app.dependency_overrides[get_session] = lambda: MagicMock()

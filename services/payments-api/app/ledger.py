@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from app.models import TransactionRow
@@ -41,3 +41,23 @@ def transfer(session: Session, from_id: UUID, to_id: UUID, amount: Decimal) -> T
         session.flush()  # sends the INSERT so PostgreSQL fills id, currency, status, created_at
         session.refresh(tx)
     return tx
+
+
+def history(session: Session, account_id: UUID, limit: int) -> list[TransactionRow]:
+    """Payments where the account is sender or receiver, newest first.
+
+    Served by the two (account, created_at DESC) indexes. id breaks ties, so the
+    order is stable when two payments share a timestamp.
+    """
+    stmt = (
+        select(TransactionRow)
+        .where(
+            or_(
+                TransactionRow.from_account_id == account_id,
+                TransactionRow.to_account_id == account_id,
+            )
+        )
+        .order_by(TransactionRow.created_at.desc(), TransactionRow.id.desc())
+        .limit(limit)
+    )
+    return list(session.scalars(stmt))

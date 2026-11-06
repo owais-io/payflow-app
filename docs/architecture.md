@@ -90,7 +90,7 @@ Rules: `owner_name` 1–100 chars; `initial_balance` ≥ 0, defaults to `"0.00"`
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | POST | `/payments` | 201 + payment | 400 same account · 404 account not found · 409 insufficient funds · 422 invalid body |
-| GET | `/payments?account_id={id}` | 200 + list of payments | 422 missing account_id |
+| GET | `/payments?account_id={id}&limit={n}` | 200 + list of payments | 422 missing/invalid account_id or limit |
 
 `POST /payments` request:
 ```json
@@ -103,7 +103,7 @@ Payment response:
   "created_at": "2026-11-02T14:05:00Z" }
 ```
 History returns payments where the account is sender or receiver, newest first;
-an unknown account returns an empty list.
+an unknown account returns an empty list. `limit` defaults to 50, maximum 200.
 Rules: `amount` > 0 with at most 2 decimals; `from` ≠ `to`.
 
 Internal call: payments-api uses `GET /accounts/{id}` on accounts-api to confirm both accounts exist.
