@@ -7,6 +7,7 @@ import redis
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app import metrics
 from app.accounts_client import AccountsClient, AccountsUnavailable
 from app.config import get_settings
 from app.db import Base, get_engine, get_sessionmaker
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="payments-api", version="0.1.0", lifespan=lifespan)
+app.include_router(metrics.router)
 
 
 def get_accounts_client(request: Request) -> AccountsClient:
@@ -63,6 +65,7 @@ def create_payment(
     body: PaymentCreate, accounts: Accounts, events: Events, session: DbSession
 ) -> Payment:
     if body.from_account_id == body.to_account_id:
+        metrics.PAYMENTS_FAILED.labels("same_account").inc()
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "from_account_id and to_account_id must differ"
         )
@@ -70,8 +73,10 @@ def create_payment(
     try:
         for account_id in (body.from_account_id, body.to_account_id):
             if not accounts.account_exists(account_id):
+                metrics.PAYMENTS_FAILED.labels("account_not_found").inc()
                 raise HTTPException(status.HTTP_404_NOT_FOUND, f"account {account_id} not found")
     except AccountsUnavailable:
+        metrics.PAYMENTS_FAILED.labels("accounts_unavailable").inc()
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "accounts service unavailable"
         ) from None
@@ -79,9 +84,14 @@ def create_payment(
     try:
         tx = transfer(session, body.from_account_id, body.to_account_id, body.amount)
     except AccountNotFound as exc:
+        metrics.PAYMENTS_FAILED.labels("account_not_found").inc()
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"account {exc.args[0]} not found") from None
     except InsufficientFunds:
+        metrics.PAYMENTS_FAILED.labels("insufficient_funds").inc()
         raise HTTPException(status.HTTP_409_CONFLICT, "insufficient funds") from None
+
+    metrics.PAYMENTS.inc()
+    metrics.PAYMENT_AMOUNT.observe(float(tx.amount))
 
     # Only after the commit inside transfer(): a rolled-back payment never sends an event.
     events.publish_payment_completed(tx)

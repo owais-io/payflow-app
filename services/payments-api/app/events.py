@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import redis
 
+from app.metrics import EVENTS_PUBLISH_FAILED
 from app.models import TransactionRow
 
 log = logging.getLogger("payments-api.events")
@@ -45,7 +46,8 @@ class EventPublisher:
             )
         except redis.RedisError:
             # The payment is already committed; losing the event is the documented
-            # trade-off (no outbox). 1.3.4 adds events_publish_failed_total here.
+            # trade-off (no outbox). The counter makes the loss visible and alertable.
+            EVENTS_PUBLISH_FAILED.inc()
             log.exception("failed to publish payment.completed for payment %s", tx.id)
             return False
         return True
