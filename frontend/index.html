@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PayFlow</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>PayFlow</h1>
+      <p class="tagline">Accounts, transfers and history in PKR</p>
+    </header>
+
+    <main>
+      <!-- Accounts this browser knows about. IDs are kept in localStorage;
+           balances always come from accounts-api. -->
+      <section class="card wide" aria-labelledby="accounts-title">
+        <div class="card-head">
+          <h2 id="accounts-title">Accounts</h2>
+          <button type="button" id="refresh-balances" class="secondary">Refresh balances</button>
+        </div>
+        <p id="no-accounts" class="muted">No accounts yet. Create one, or add an existing one by ID.</p>
+        <table id="accounts-table" hidden>
+          <thead>
+            <tr>
+              <th scope="col">Owner</th>
+              <th scope="col">Account ID</th>
+              <th scope="col" class="num">Balance</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="accounts-body"></tbody>
+        </table>
+        <p id="accounts-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card" aria-labelledby="create-title">
+        <h2 id="create-title">Create account</h2>
+        <form id="create-form" novalidate>
+          <label for="owner-name">Owner name</label>
+          <input id="owner-name" name="owner_name" required maxlength="100" autocomplete="name">
+
+          <label for="initial-balance">Initial balance (PKR)</label>
+          <input id="initial-balance" name="initial_balance" inputmode="decimal" placeholder="0.00">
+
+          <button type="submit">Create account</button>
+        </form>
+        <p id="create-status" class="status" role="status" aria-live="polite"></p>
+
+        <h3>Add an existing account</h3>
+        <form id="add-form" novalidate>
+          <label for="existing-id">Account ID</label>
+          <input id="existing-id" name="account_id" required spellcheck="false"
+                 placeholder="3f2b0a52-…">
+          <button type="submit" class="secondary">Add</button>
+        </form>
+        <p id="add-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card" aria-labelledby="transfer-title">
+        <h2 id="transfer-title">Make a transfer</h2>
+        <form id="transfer-form" novalidate>
+          <label for="from-account">From</label>
+          <select id="from-account" name="from_account_id" required></select>
+
+          <label for="to-account">To</label>
+          <select id="to-account" name="to_account_id" required></select>
+
+          <label for="amount">Amount (PKR)</label>
+          <input id="amount" name="amount" required inputmode="decimal" placeholder="250.00">
+
+          <button type="submit">Send money</button>
+        </form>
+        <p id="transfer-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card wide" aria-labelledby="history-title">
+        <div class="card-head">
+          <h2 id="history-title">History</h2>
+          <label class="inline">
+            <span class="visually-hidden">Account</span>
+            <select id="history-account"></select>
+          </label>
+        </div>
+        <p id="no-history" class="muted">Pick an account to see its payments.</p>
+        <table id="history-table" hidden>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Direction</th>
+              <th scope="col">Counterparty</th>
+              <th scope="col" class="num">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+        <p id="history-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+    </main>
+  </body>
+</html>
