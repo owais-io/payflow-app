@@ -17,10 +17,46 @@ Application code for **PayFlow**, a small fintech payments app: create accounts,
 
 Design, API contracts, data model and events: [docs/architecture.md](docs/architecture.md).
 
-## Run it locally
+## Run it with Docker Compose (recommended)
+
+One command builds the four images and starts all six containers in the right order.
+Kubernetes comes later (payflow-platform).
+
+**Prerequisites:** Docker with Compose v2 (`docker compose version`); host port 8081 free.
+
+```bash
+cp .env.example .env          # then edit .env: at least set POSTGRES_PASSWORD
+docker compose up -d --build
+docker compose ps             # all six (healthy) after ~15 s
+```
+Open http://localhost:8081 (or the `FRONTEND_PORT` you set in `.env`).
+
+| Command | What it does |
+|---|---|
+| `docker compose logs -f notification-worker` | Follow the worker; a transfer logs `"notification sent"` |
+| `python3 scripts/seed.py --gateway http://localhost:8081` | Demo data through the frontend, like the browser |
+| `docker compose down` | Stop and remove the containers; **data is kept** (volume `payflow-app_pgdata`) |
+| `docker compose down -v` | Also delete the volume: **all accounts and payments are gone** |
+
+**How it fits together** ([compose.yaml](compose.yaml)):
+- **Start order uses healthchecks, not just container start.** postgres and redis → accounts-api
+  → payments-api → frontend; each waits for `condition: service_healthy`. The APIs' checks use
+  `/readyz` (database reachable), so nothing starts against a database it can't reach.
+- **Config comes from `.env`** (gitignored), documented in [.env.example](.env.example). Required
+  values use `${VAR:?}`, so a missing one stops compose with a clear message. `DATABASE_URL` is
+  built from the same `POSTGRES_*` values the database uses. The `services/*/.env.example` files
+  are separate: they are for the manual run below.
+- **Only the frontend is published** to the host. PostgreSQL, Redis and the APIs are reachable
+  only inside the compose network, by service name.
+- **[frontend/dev/nginx.compose.conf](frontend/dev/nginx.compose.conf)** is mounted over the
+  image's nginx config and routes `/api/...` to the APIs, standing in for the Kubernetes Ingress.
+- **PostgreSQL keeps its data in a named volume.** Redis has none on purpose: it only carries
+  events in flight, and losing unread events on a local restart is acceptable.
+
+## Run it locally without Docker Compose
 
 Everything runs on your machine: the two data stores in Docker, the Python services with
-uvicorn, the frontend in an nginx container. Kubernetes comes later (payflow-platform).
+uvicorn, the frontend in an nginx container. Useful when working on one service's code.
 
 ### Prerequisites
 - Python 3.12+, Docker, `curl`, `jq`
@@ -255,7 +291,10 @@ registry stores and a node downloads. **Disk usage** is unpacked, on the node.
 | `/readyz` says `"database": "down"` | PostgreSQL container stopped | `docker start payflow-pg` |
 | Worker fails at startup with a validation error | `REDIS_URL` or `HOSTNAME` not set | `set -a; source .env; set +a` in that terminal |
 | `failed to bind host port 0.0.0.0:8080` from `docker run -p` | Something on the host already uses 8080 (e.g. Jenkins) | Publish another host port: `-p 8081:8080` (the container still listens on 8080) |
-| A root-owned folder appears where a mounted file should be (`rm` says write-protected) | The `-v` source path did not exist, so Docker created a directory there as root | Check the path before mounting; remove it with `sudo rm -r <folder>` |
+| A root-owned folder appears where a mounted file should be (`rm` says write-protected), or compose fails with `not a directory: Are you trying to mount a directory onto a file` | The mount's source path did not exist, so Docker created an empty directory there as root | `docker compose down`, `sudo rmdir <path>`, put the file at that path, then `up` again |
+| Compose: `failed to bind host port 0.0.0.0:8081: address already in use` | Something on the host already uses that port | Set another `FRONTEND_PORT` in `.env` |
+| Compose: `required variable POSTGRES_PASSWORD is missing a value` | No `.env`, or the variable is missing from it | `cp .env.example .env` and fill it in |
+| Compose: APIs never become healthy, logs show `password authentication failed` | `POSTGRES_*` in `.env` changed after the volume was created; PostgreSQL only reads them on first start | Put the old values back, or `docker compose down -v` (**deletes the data**) and `up` again |
 
 ## License
 
