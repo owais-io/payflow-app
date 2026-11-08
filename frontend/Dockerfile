@@ -3,7 +3,11 @@ ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb
 
 # ---- Stage 1: builder ----
 FROM ${NGINX_IMAGE}
-
+# TEMPORARY (2026-11-08): the pinned base still has Alpine packages with
+# published fixes (brotli CRITICAL; curl, expat, musl, zlib HIGH).
+# Remove this block once a Trivy scan of the pinned base shows them fixed.
+USER 0:0
+RUN apk upgrade --no-cache
 COPY index.html app.js styles.css /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
