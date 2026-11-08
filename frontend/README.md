@@ -28,7 +28,7 @@ accounts-api on 8001 and payments-api on 8002 must be running. From this folder:
 docker run --rm --name payflow-frontend --network host \
   -v "$PWD":/usr/share/nginx/html:ro \
   -v "$PWD/dev/nginx.local.conf":/etc/nginx/conf.d/default.conf:ro \
-  nginxinc/nginx-unprivileged:1.27-alpine
+  nginxinc/nginx-unprivileged:1.30.6-alpine
 ```
 
 Open http://localhost:8080.
