@@ -77,7 +77,7 @@ cd frontend
 docker run --rm --name payflow-frontend --network host \
   -v "$PWD":/usr/share/nginx/html:ro \
   -v "$PWD/dev/nginx.local.conf":/etc/nginx/conf.d/default.conf:ro \
-  nginxinc/nginx-unprivileged:1.27-alpine
+  nginxinc/nginx-unprivileged:1.30.6-alpine
 ```
 Open http://localhost:8080. `dev/nginx.local.conf` routes `/api/...` to the APIs the same way
 the Kubernetes Ingress will.
@@ -93,7 +93,7 @@ sed "s/listen 8080;/listen $PORT;/" dev/nginx.local.conf > /tmp/payflow-nginx.co
 docker run --rm --name payflow-frontend --network host \
   -v "$PWD":/usr/share/nginx/html:ro \
   -v /tmp/payflow-nginx.conf:/etc/nginx/conf.d/default.conf:ro \
-  nginxinc/nginx-unprivileged:1.27-alpine
+  nginxinc/nginx-unprivileged:1.30.6-alpine
 ```
 Then open `http://localhost:$PORT` (and use that port with `--gateway` in step 5).
 `sudo ss -ltnp 'sport = :8080'` shows what is using 8080.
@@ -133,7 +133,84 @@ cd services/<service> && source .venv/bin/activate
 pytest
 ruff check . && ruff format --check .
 ```
+## Container images
 
+Each service and the frontend has its own `Dockerfile` next to its code. Every image runs as a
+non-root user and pins its base image by tag and digest.
+
+| Image | Build context | Base image | User (UID) | Port | Health check |
+|---|---|---|---|---|---|
+| accounts-api | `services/accounts-api` | `python:3.12.16-slim-trixie` | 10001 | 8001 | `GET /healthz` |
+| payments-api | `services/payments-api` | `python:3.12.16-slim-trixie` | 10001 | 8002 | `GET /healthz` |
+| notification-worker | `services/notification-worker` | `python:3.12.16-slim-trixie` | 10001 | 9100 (metrics) | `GET /metrics` |
+| frontend | `frontend` | `nginxinc/nginx-unprivileged:1.30.6-alpine` | 101 | 8080 | `GET /healthz` |
+
+- **Python images are multi-stage.** The builder stage installs the service and its
+  dependencies into a virtualenv at `/opt/venv`. The runtime stage copies only that venv, which
+  stays owned by root, so the app can run its code but not change it.
+- **`.dockerignore` files are allowlists.** Everything is excluded, then only what the
+  Dockerfile copies is let back in. If an image needs a new file, add a `!path` line.
+- **The frontend image serves static files only.** `/api` routing is done by the Kubernetes
+  Ingress, or locally by `frontend/dev/nginx.local.conf`.
+- **Version metadata comes from build args:** `VERSION` and `REVISION` become the OCI labels
+  `org.opencontainers.image.version` and `.revision`.
+
+### Build
+
+```bash
+V=0.1.0; R=$(git rev-parse --short HEAD)
+for s in accounts-api payments-api notification-worker; do
+  docker build -t $s:dev --build-arg VERSION=$V --build-arg REVISION=$R services/$s
+done
+docker build -t frontend:dev --build-arg VERSION=$V --build-arg REVISION=$R frontend
+```
+
+### Run
+
+PostgreSQL and Redis must be running ([step 1](#1-postgresql-and-redis)). One terminal each:
+
+```bash
+docker run --rm --name accounts-api --network host \
+  -e DATABASE_URL=postgresql+psycopg://payflow:payflow@localhost:5432/payflow \
+  accounts-api:dev
+
+docker run --rm --name payments-api --network host \
+  -e DATABASE_URL=postgresql+psycopg://payflow:payflow@localhost:5432/payflow \
+  -e ACCOUNTS_API_URL=http://127.0.0.1:8001 \
+  -e REDIS_URL=redis://localhost:6379/0 \
+  payments-api:dev
+
+docker run --rm --name notification-worker --network host \
+  -e REDIS_URL=redis://localhost:6379/0 \
+  notification-worker:dev
+```
+
+With `--network host`, the worker's consumer name (`HOSTNAME`) is your machine's host name,
+so run only one worker this way. In Kubernetes each pod gets its own name.
+
+The frontend image on its own (static page only, `/api` returns 404):
+
+```bash
+docker run --rm --name frontend -p 8080:8080 frontend:dev
+```
+
+The frontend with the APIs, using the dev config in place of the image's config:
+
+```bash
+docker run --rm --name frontend --network host --no-healthcheck \
+  -v "$PWD/frontend/dev/nginx.local.conf":/etc/nginx/conf.d/default.conf:ro \
+  frontend:dev
+```
+
+Open http://localhost:8080. `--no-healthcheck` is needed here because the dev config has no
+`/healthz`. If 8080 is taken, use the `sed` copy from [step 4](#4-frontend-terminal-4).
+
+### Check
+
+```bash
+docker ps                                                        # every container (healthy) after ~10 s
+docker inspect --format '{{json .Config.Labels}}' accounts-api:dev | jq
+```
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -144,6 +221,8 @@ ruff check . && ruff format --check .
 | Payment works but no notification | Worker not running, or Redis down (payments-api logs `event publish failed`) | Start the worker; `docker start payflow-redis` |
 | `/readyz` says `"database": "down"` | PostgreSQL container stopped | `docker start payflow-pg` |
 | Worker fails at startup with a validation error | `REDIS_URL` or `HOSTNAME` not set | `set -a; source .env; set +a` in that terminal |
+| `failed to bind host port 0.0.0.0:8080` from `docker run -p` | Something on the host already uses 8080 (e.g. Jenkins) | Publish another host port: `-p 8081:8080` (the container still listens on 8080) |
+| A root-owned folder appears where a mounted file should be (`rm` says write-protected) | The `-v` source path did not exist, so Docker created a directory there as root | Check the path before mounting; remove it with `sudo rm -r <folder>` |
 
 ## License
 
