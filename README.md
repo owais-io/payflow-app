@@ -35,6 +35,7 @@ Open http://localhost:8081 (or the `FRONTEND_PORT` you set in `.env`).
 |---|---|
 | `docker compose logs -f notification-worker` | Follow the worker; a transfer logs `"notification sent"` |
 | `python3 scripts/seed.py --gateway http://localhost:8081` | Demo data through the frontend, like the browser |
+| `python3 scripts/smoke_test.py` | End-to-end check through the frontend: exit 0 = healthy, 1 = a check failed, 2 = unreachable |
 | `docker compose down` | Stop and remove the containers; **data is kept** (volume `payflow-app_pgdata`) |
 | `docker compose down -v` | Also delete the volume: **all accounts and payments are gone** |
 
@@ -52,6 +53,27 @@ Open http://localhost:8081 (or the `FRONTEND_PORT` you set in `.env`).
   image's nginx config and routes `/api/...` to the APIs, standing in for the Kubernetes Ingress.
 - **PostgreSQL keeps its data in a named volume.** Redis has none on purpose: it only carries
   events in flight, and losing unread events on a local restart is acceptable.
+
+### Smoke test
+
+[scripts/smoke_test.py](scripts/smoke_test.py) checks that a running stack works end to end,
+through the gateway like the browser: it creates two accounts, transfers 250.00, checks both
+balances and the history, and checks that an overdraft is refused with 409 and moves no money.
+Standard library only, so no virtualenv is needed.
+
+```bash
+python3 scripts/smoke_test.py                                  # compose on localhost:8081
+python3 scripts/smoke_test.py --base-url http://localhost:8082 # another port or host
+SMOKE_BASE_URL=http://localhost:8081 python3 scripts/smoke_test.py --wait 120
+```
+
+| Exit code | Meaning |
+|---|---|
+| 0 | All checks passed |
+| 1 | A check failed, or part of the stack stopped answering during the test |
+| 2 | The stack could not be reached within `--wait` seconds (default 60); nothing was tested |
+
+Each run creates two new `smoke-<timestamp>` accounts; they stay in the database.
 
 ## Run it locally without Docker Compose
 
