@@ -211,6 +211,39 @@ Open http://localhost:8080. `--no-healthcheck` is needed here because the dev co
 docker ps                                                        # every container (healthy) after ~10 s
 docker inspect --format '{{json .Config.Labels}}' accounts-api:dev | jq
 ```
+### Image sizes
+
+Measured 2026-11-08 with Docker 29.9.2 . **Content size** is compressed: what a
+registry stores and a node downloads. **Disk usage** is unpacked, on the node.
+
+**Where the size comes from (accounts-api, three ways to build it):**
+
+| Variant | Base image | Stages | Content size | Disk usage |
+|---|---|---|---|---|
+| Naive | `python:3.12.16-trixie` (full) | 1 | 468 MB | 1.79 GB |
+| Single-stage slim | `python:3.12.16-slim-trixie` | 1 | 74.0 MB | 316 MB |
+| **Multi-stage slim (this repo)** | `python:3.12.16-slim-trixie` | 2 | **74.4 MB** | **320 MB** |
+
+- **The slim base did almost all the work: 84% smaller to download** (468 → 74 MB). The full
+  image carries compilers, headers and about 1 GB of Debian packages the services never use.
+- **Multi-stage added about 3 MB here instead of saving it.** Every dependency installs from a
+  pre-built wheel (including `psycopg[binary]`), so the builder stage has nothing big to leave
+  behind. The extra size is the virtualenv's own copy of pip.
+- **`PIP_NO_CACHE_DIR=1` alone saved about 27 MB:** the naive build's `pip install` layer is
+  135 MB, against 108 MB with the cache disabled.
+- **Multi-stage is kept because of what it keeps out of the runtime image**, not for size: no
+  build files (`build/`, `*.egg-info`, source tree), and the app runs from a root-owned venv. It
+  becomes a real size saving as soon as a dependency has to be compiled (for example `psycopg`
+  from source, which needs `gcc` and `libpq-dev` in the builder only).
+
+**All images (built from this repo's Dockerfiles):**
+
+| Image | Content size | Disk usage |
+|---|---|---|
+| accounts-api | 74.4 MB | 320 MB |
+| payments-api | 76.5 MB | 330 MB |
+| notification-worker | 52.9 MB | 219 MB |
+| frontend | 25.6 MB | 90.2 MB |
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
