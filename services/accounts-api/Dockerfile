@@ -26,7 +26,6 @@ RUN groupadd --gid 10001 payflow \
     && useradd --uid 10001 --gid payflow --no-create-home --shell /usr/sbin/nologin payflow
 
 COPY --from=builder /opt/venv /opt/venv
-
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.source=https://github.com/owais-io/payflow-app \
@@ -36,6 +35,8 @@ LABEL org.opencontainers.image.source=https://github.com/owais-io/payflow-app \
       org.opencontainers.image.licenses=MIT
 
 WORKDIR /app
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 USER 10001:10001
 EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
