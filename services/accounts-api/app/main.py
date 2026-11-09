@@ -8,7 +8,6 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, status
 
 from app import health, logging_config, metrics, models  # noqa: F401  (models registers the table with Base)
-from app.db import Base, get_engine
 from app.schemas import Account, AccountCreate, Balance
 from app.store import AccountStore, get_store
 
@@ -20,9 +19,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    # Temporary: creates missing tables at startup.
-    # Replaced by a proper migration step in Task 3.2.5.
-    Base.metadata.create_all(get_engine())
     yield
 
 

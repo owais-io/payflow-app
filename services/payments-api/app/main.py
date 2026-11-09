@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app import health, logging_config, metrics
 from app.accounts_client import AccountsClient, AccountsUnavailable
 from app.config import get_settings
-from app.db import Base, get_engine, get_sessionmaker
+from app.db import get_sessionmaker
 from app.events import EventPublisher
 from app.ledger import AccountNotFound, InsufficientFunds, history, transfer
 from app.models import TransactionRow
@@ -27,9 +27,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Temporary: creates the transactions table at startup (only that table).
-    # Replaced by a proper migration step in Task 3.2.5.
-    Base.metadata.create_all(get_engine(), tables=[TransactionRow.__table__])
     settings = get_settings()
     app.state.redis = redis.Redis.from_url(
         settings.redis_url,
