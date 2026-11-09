@@ -122,7 +122,7 @@ Then:
 | 2 | payments-api | `uvicorn app.main:app --port 8002 --no-access-log` |
 | 3 | notification-worker | `python -m app.main` |
 
-The APIs create their tables on startup (temporary until database migrations are added).
+Tables are created by Alembic migrations: accounts-migrate and payments-migrate run alembic upgrade head before the APIs start.
 Check them:
 ```bash
 curl -s localhost:8001/readyz; echo
