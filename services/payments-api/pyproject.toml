@@ -24,6 +24,7 @@ dev = [
     "pytest-cov>=5",
     "fakeredis>=2.20",
     "ruff>=0.6",
+    "alembic>=1.13",
 ]
 
 [tool.setuptools]

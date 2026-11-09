@@ -3,5 +3,7 @@
 *
 !pyproject.toml
 !app/
+!alembic.ini
+!migrations/
 **/__pycache__
 **/*.pyc
